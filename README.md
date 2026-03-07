@@ -1,0 +1,77 @@
+# A-Train Go
+
+A 2D browser-based railway simulation game with JRPG (Dragon Warrior) visual style. Build tracks, place stations, buy trains, and manage a railway network on a procedurally generated 1000x1000 tile map.
+
+## Getting Started
+
+```bash
+npm install
+npm run dev
+```
+
+Open `http://localhost:5173` in your browser.
+
+## Controls
+
+| Key | Action |
+|-----|--------|
+| `Q` `W` `E` / `A` `D` / `Z` `S` `C` | Move cursor (8 directions) |
+| `Space` | Place or remove track |
+| `F` | Place station ($500) |
+| `T` | Buy train ($2,000) |
+| `K` | Connect/disconnect tracks (press on source, move, press on target) |
+| `L` | Place/remove street light ($50) |
+| `Ctrl+S` | Save game |
+| `Esc` | Cancel connection mode |
+| Mouse drag | Pan the map |
+| Click minimap | Jump to location |
+
+## Gameplay
+
+- **Tracks** cost $100 on flat terrain, $800 through mountains (tunnels), and $500/$2,500/$10,000 for bridges over shallow/medium/deep water.
+- **Stations** generate passengers over time. Trains pick up passengers at one station and earn revenue delivering them to the next.
+- **Trains** move automatically along the track network. Up to 9 trains, each with a unique color and number.
+- **Tax** is collected every 30 days based on the number of track tiles you own ($5 per tile).
+- **Street lights** illuminate surrounding tiles at night (3x3 bright, 5x5 dim). Placeable on grass and forest only.
+- **Day/night cycle** with gradual brightness transitions. The game auto-saves at the start of each new day.
+
+### Track Placement Rules
+
+- Placing a track with 1-2 adjacent track neighbors auto-connects to them.
+- Placing a track with 3+ adjacent neighbors creates an isolated node (use `K` to connect manually).
+- Manual connections (via `K`) reject 90-degree angles.
+
+### Train Movement at Junctions
+
+At a junction with 3+ connections, trains filter out reverse and sharp turns (90 degrees or more), then choose randomly from remaining valid directions.
+
+## Architecture
+
+```
+client/          Browser client (HTML5 Canvas + TypeScript)
+  index.html     Entry point and UI layout
+  main.ts        WebSocket connection and render loop
+  Renderer.ts    Canvas rendering (terrain, tracks, trains, day/night)
+  InputHandler.ts Keyboard and mouse input
+  UI.ts          Sidebar UI updates
+
+server/          Game server (Node.js + TypeScript)
+  index.ts       WebSocket server and save/load
+  GameWorld.ts   Game state, actions, tick loop
+  TrackNetwork.ts Track graph (adjacency list)
+  TrainSimulator.ts Train movement and collision
+  PassengerSystem.ts Passenger generation and revenue
+
+shared/          Shared between client and server
+  types.ts       Type definitions and message types
+  constants.ts   Game constants (costs, rates, grid size)
+  directions.ts  8-direction utilities
+  terrain.ts     Procedural terrain generation (noise-based)
+```
+
+## Tech Stack
+
+- **Server**: Node.js, WebSocket (`ws`)
+- **Client**: HTML5 Canvas, TypeScript
+- **Build**: Vite + tsx
+- **No frameworks** - vanilla TypeScript throughout
