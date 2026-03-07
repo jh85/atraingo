@@ -11,6 +11,15 @@ npm run dev
 
 Open `http://localhost:3000` in your browser.
 
+To use a different port, change the `port` value in `vite.config.ts`:
+
+```ts
+server: {
+  port: 3000, // change this to your desired port
+```
+
+Note: ports below 1024 (e.g., port 80) require `sudo npm run dev`.
+
 ## Controls
 
 | Key | Action |
