@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>A-Train</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+    #header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 16px;
+      background: #16213e;
+      border-bottom: 2px solid #0f3460;
+      z-index: 10;
+    }
+    #header h1 { font-size: 20px; color: #e94560; }
+    #money { font-size: 18px; color: #ffd700; }
+    #game-area {
+      flex: 1;
+      display: flex;
+      position: relative;
+    }
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      cursor: grab;
+    }
+    canvas:active { cursor: grabbing; }
+    #sidebar {
+      width: 220px;
+      background: #16213e;
+      border-left: 2px solid #0f3460;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+    }
+    #sidebar h3 {
+      color: #e94560;
+      font-size: 14px;
+      border-bottom: 1px solid #0f3460;
+      padding-bottom: 4px;
+    }
+    .btn {
+      background: #0f3460;
+      color: #e0e0e0;
+      border: 1px solid #533483;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+      text-align: left;
+    }
+    .btn:hover { background: #533483; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .info-line {
+      font-size: 12px;
+      color: #a0a0a0;
+      line-height: 1.6;
+    }
+    .info-line span { color: #e0e0e0; }
+    #status {
+      position: fixed;
+      bottom: 8px;
+      left: 8px;
+      font-size: 12px;
+      color: #666;
+      z-index: 10;
+    }
+    #error-msg {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #e94560;
+      color: white;
+      padding: 6px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      display: none;
+      z-index: 20;
+    }
+    .key-hint {
+      display: inline-block;
+      background: #0f3460;
+      border: 1px solid #533483;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 11px;
+      min-width: 20px;
+      text-align: center;
+    }
+    .station-item, .train-item {
+      cursor: pointer;
+      padding: 3px 4px;
+      border-radius: 3px;
+    }
+    .station-item:hover, .train-item:hover {
+      background: #0f3460;
+    }
+    #station-list, #train-list {
+      max-height: 160px;
+      overflow-y: auto;
+    }
+    .visit-log {
+      font-size: 10px;
+      color: #777;
+      padding-left: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>A-Train</h1>
+    <div style="display:flex; gap:24px; align-items:center;">
+      <div id="game-time" style="font-size:16px; color:#a0c4ff;">Day 1</div>
+      <div id="money">$10,000</div>
+    </div>
+  </div>
+  <div id="game-area">
+    <div id="canvas-container">
+      <canvas id="game"></canvas>
+    </div>
+    <div id="sidebar">
+      <h3>Controls</h3>
+      <div class="info-line">
+        Move cursor:<br>
+        <span class="key-hint">Q</span><span class="key-hint">W</span><span class="key-hint">E</span><br>
+        <span class="key-hint">A</span> &nbsp; <span class="key-hint">D</span><br>
+        <span class="key-hint">Z</span><span class="key-hint">S</span><span class="key-hint">C</span><br><br>
+        <span class="key-hint">Space</span> Place/remove<br>
+        <span class="key-hint">F</span> Place station ($500)<br>
+        <span class="key-hint">T</span> Buy train ($2,000)<br>
+        <span class="key-hint">K</span> Connect tracks<br>
+        <span class="key-hint">L</span> Street light ($50)<br>
+        <span class="key-hint">Ctrl+S</span> Save game<br><br>
+        Track: $100 | Tunnel: $800<br>
+        Bridge: $500/$2.5K/$10K<br><br>
+        Drag map to pan
+      </div>
+
+      <h3>Info</h3>
+      <div class="info-line" id="info-cursor">Cursor: <span>500, 500</span></div>
+      <div class="info-line" id="info-terrain">Terrain: <span>grass</span></div>
+      <div class="info-line" id="info-trains">Trains: <span>0</span></div>
+      <div class="info-line" id="info-stations">Stations: <span>0</span></div>
+
+      <h3>Stations</h3>
+      <div class="info-line" style="font-size:11px; margin-bottom:4px; color:#777;">Click to buy train ($2,000)</div>
+      <div id="station-list" class="info-line">None yet</div>
+
+      <h3>Trains</h3>
+      <div id="train-list" class="info-line">None yet</div>
+    </div>
+  </div>
+  <div id="status">Connecting...</div>
+  <div id="error-msg"></div>
+  <script type="module" src="/main.ts"></script>
+</body>
+</html>
