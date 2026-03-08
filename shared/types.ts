@@ -29,6 +29,7 @@ export interface Train {
   state: TrainState;
   stationTimer: number;
   stationHistory: StationVisit[];
+  cellsSinceLastStop: number;
 }
 
 export interface Station {
@@ -36,6 +37,8 @@ export interface Station {
   name: string;
   waitingPassengers: number;
   trafficScore: number;
+  stopProbability: number;
+  discordWebhook: string | null;
 }
 
 export interface Player {
@@ -75,6 +78,9 @@ export type ClientMessage =
   | { type: 'set_branch_direction'; posKey: string; direction: Direction }
   | { type: 'connect_track'; from: Pos; to: Pos }
   | { type: 'place_streetlight'; position: Pos }
+  | { type: 'rename_station'; stationKey: string; name: string }
+  | { type: 'set_station_probability'; stationKey: string; probability: number }
+  | { type: 'set_station_webhook'; stationKey: string; webhook: string }
   | { type: 'save_game' };
 
 export type ServerMessage =

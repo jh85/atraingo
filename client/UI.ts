@@ -68,7 +68,58 @@ export class UI {
       for (const s of state.stations) {
         const div = document.createElement('div');
         div.className = 'station-item';
-        div.innerHTML = `${s.name} <span style="color:#ffd700">(${s.waitingPassengers})</span>`;
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = s.name;
+        nameSpan.style.cursor = 'pointer';
+        nameSpan.style.textDecoration = 'underline';
+        nameSpan.style.textDecorationStyle = 'dotted';
+        nameSpan.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const newName = prompt('Rename station:', s.name);
+          if (newName !== null) {
+            this.sendAction({ type: 'rename_station', stationKey: posKey(s.position), name: newName });
+          }
+        });
+
+        const probSpan = document.createElement('span');
+        probSpan.textContent = ` p=${s.stopProbability.toFixed(1)}`;
+        probSpan.style.color = '#aaa';
+        probSpan.style.cursor = 'pointer';
+        probSpan.style.fontSize = '11px';
+        probSpan.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const val = prompt('Stop probability (0.0 - 1.0):', String(s.stopProbability));
+          if (val !== null) {
+            const p = parseFloat(val);
+            if (!isNaN(p)) {
+              this.sendAction({ type: 'set_station_probability', stationKey: posKey(s.position), probability: p });
+            }
+          }
+        });
+
+        const paxSpan = document.createElement('span');
+        paxSpan.textContent = ` (${s.waitingPassengers})`;
+        paxSpan.style.color = '#ffd700';
+
+        const discordSpan = document.createElement('span');
+        discordSpan.textContent = s.discordWebhook ? ' [D]' : ' [+D]';
+        discordSpan.style.color = s.discordWebhook ? '#7289DA' : '#555';
+        discordSpan.style.cursor = 'pointer';
+        discordSpan.style.fontSize = '10px';
+        discordSpan.title = 'Set Discord webhook';
+        discordSpan.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const url = prompt('Discord webhook URL (empty to remove):', s.discordWebhook ?? '');
+          if (url !== null) {
+            this.sendAction({ type: 'set_station_webhook', stationKey: posKey(s.position), webhook: url });
+          }
+        });
+
+        div.appendChild(nameSpan);
+        div.appendChild(paxSpan);
+        div.appendChild(probSpan);
+        div.appendChild(discordSpan);
         div.addEventListener('click', () => {
           this.sendAction({ type: 'buy_train', stationKey: posKey(s.position) });
         });

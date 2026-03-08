@@ -3,7 +3,6 @@ import { gridDistance } from '../shared/directions.js';
 import {
   MAX_WAITING_PASSENGERS,
   TRAIN_CAPACITY,
-  STATION_STOP_TICKS,
   REVENUE_PER_PASSENGER_PER_DIST,
   BASE_PASSENGER_RATE,
 } from '../shared/constants.js';
@@ -47,7 +46,6 @@ export class PassengerSystem {
       stationAtPos.trafficScore += boarding;
     }
 
-    train.stationTimer = STATION_STOP_TICKS;
     return revenue;
   }
 }

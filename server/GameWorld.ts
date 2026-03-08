@@ -4,6 +4,9 @@ import {
   TICK_INTERVAL, PASSENGER_GEN_TICKS, STATION_STOP_TICKS, MAP_SEED,
   MINUTES_PER_TICK, START_HOUR, TAX_INTERVAL_DAYS, TRACK_TAX_PER_TILE,
 } from '../shared/constants.js';
+
+const TICKS_PER_DAY = (24 * 60) / MINUTES_PER_TICK;
+const STOP_TICKS_PER_CELL = 2;
 import { posKey, parseKey, movePos, directionFromTo, oppositeDir, angleDiff, ALL_DIRECTIONS } from '../shared/directions.js';
 import { terrainAt, trackCostAt } from '../shared/terrain.js';
 import { TrackNetwork } from './TrackNetwork.js';
@@ -106,14 +109,46 @@ export class GameWorld {
 
     for (const trainId of arrivals) {
       const train = this.trains.find(t => t.id === trainId);
-      if (train) {
-        const station = this.stations.find(s => posKey(s.position) === posKey(train.position));
-        if (station) {
-          train.stationHistory.push({ name: station.name, day: this.time.day });
-          if (train.stationHistory.length > 5) train.stationHistory.shift();
-        }
-        const revenue = this.passengerSys.handleStationStop(train, this.stations);
-        this.player.money += revenue;
+      if (!train) continue;
+      const station = this.stations.find(s => posKey(s.position) === posKey(train.position));
+      if (!station) continue;
+
+      // Probability check: does the train stop here?
+      if (Math.random() >= station.stopProbability) continue;
+
+      // Stop at station
+      train.state = 'at_station';
+      const duration = Math.min(
+        Math.max(train.cellsSinceLastStop * STOP_TICKS_PER_CELL, STATION_STOP_TICKS),
+        TICKS_PER_DAY,
+      );
+      train.stationTimer = duration;
+      train.cellsSinceLastStop = 0;
+
+      train.stationHistory.push({ name: station.name, day: this.time.day });
+      if (train.stationHistory.length > 5) train.stationHistory.shift();
+
+      const passengersOff = train.boardedAtStation ? train.passengers : 0;
+      const revenue = this.passengerSys.handleStationStop(train, this.stations);
+      const passengersOn = train.passengers;
+      this.player.money += revenue;
+
+      // Discord notification
+      if (station.discordWebhook) {
+        const prevStation = train.stationHistory.length >= 2
+          ? train.stationHistory[train.stationHistory.length - 2].name
+          : 'depot';
+        const stayHours = (duration * MINUTES_PER_TICK / 60);
+        const stayLabel = stayHours >= 1
+          ? `${Math.floor(stayHours)}h ${Math.round((stayHours % 1) * 60)}m`
+          : `${Math.round(stayHours * 60)}m`;
+        this.sendDiscordNotification(station.discordWebhook,
+          `**Train ${train.id}** arrived at **${station.name}** (Day ${this.time.day})\n`
+          + `Came from: ${prevStation}\n`
+          + `Staying for: ${stayLabel}\n`
+          + `${passengersOff} passengers got off, ${passengersOn} got on\n`
+          + (revenue > 0 ? `Revenue: $${revenue.toLocaleString()}` : ''),
+        );
       }
     }
 
@@ -136,6 +171,12 @@ export class GameWorld {
         return this.connectTrack(msg.from, msg.to);
       case 'place_streetlight':
         return this.placeStreetLight(msg.position);
+      case 'rename_station':
+        return this.renameStation(msg.stationKey, msg.name);
+      case 'set_station_webhook':
+        return this.setStationWebhook(msg.stationKey, msg.webhook);
+      case 'set_station_probability':
+        return this.setStationProbability(msg.stationKey, msg.probability);
       case 'set_branch_direction':
         return this.setBranchDirection(msg.posKey, msg.direction);
       default:
@@ -347,6 +388,8 @@ export class GameWorld {
       name: `Station ${this.stationCount}`,
       waitingPassengers: 0,
       trafficScore: 0,
+      stopProbability: 0.5,
+      discordWebhook: null,
     });
 
     this.onUpdate?.();
@@ -392,9 +435,46 @@ export class GameWorld {
       state: 'at_station',
       stationTimer: STATION_STOP_TICKS,
       stationHistory: [{ name: station.name, day: this.time.day }],
+      cellsSinceLastStop: 0,
     };
     this.trains.push(train);
 
+    this.onUpdate?.();
+    return { success: true };
+  }
+
+  private setStationWebhook(stationKey: string, webhook: string): { success: boolean; error?: string } {
+    const station = this.stations.find(s => posKey(s.position) === stationKey);
+    if (!station) return { success: false, error: 'No station found' };
+    station.discordWebhook = webhook.trim() || null;
+    this.onUpdate?.();
+    return { success: true };
+  }
+
+  private sendDiscordNotification(webhookUrl: string, content: string): void {
+    fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    }).catch((err) => {
+      console.error('Discord webhook failed:', err.message);
+    });
+  }
+
+  private renameStation(stationKey: string, name: string): { success: boolean; error?: string } {
+    const station = this.stations.find(s => posKey(s.position) === stationKey);
+    if (!station) return { success: false, error: 'No station found' };
+    const trimmed = name.trim().slice(0, 20);
+    if (trimmed.length === 0) return { success: false, error: 'Name cannot be empty' };
+    station.name = trimmed;
+    this.onUpdate?.();
+    return { success: true };
+  }
+
+  private setStationProbability(stationKey: string, probability: number): { success: boolean; error?: string } {
+    const station = this.stations.find(s => posKey(s.position) === stationKey);
+    if (!station) return { success: false, error: 'No station found' };
+    station.stopProbability = Math.max(0, Math.min(1, probability));
     this.onUpdate?.();
     return { success: true };
   }
@@ -451,8 +531,13 @@ export class GameWorld {
     this.trains = data.trains.map((t: any) => ({
       ...t,
       stationHistory: t.stationHistory ?? [],
+      cellsSinceLastStop: t.cellsSinceLastStop ?? 0,
     }));
-    this.stations = data.stations;
+    this.stations = data.stations.map((s: any) => ({
+      ...s,
+      stopProbability: s.stopProbability ?? 0.5,
+      discordWebhook: s.discordWebhook ?? null,
+    }));
     this.streetLights = data.streetLights ?? [];
     this.player = data.player;
     this.time = data.time;
