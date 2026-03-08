@@ -42,6 +42,18 @@ server: {
 - **Street lights** illuminate surrounding tiles at night (3x3 bright, 5x5 dim). Placeable on grass and forest only.
 - **Day/night cycle** with gradual brightness transitions. The game auto-saves at the start of each new day.
 
+### Stations
+
+Each station has configurable properties accessible from the sidebar:
+
+- **Name** — click the station name to rename it (max 20 characters).
+- **Stop probability** (`p=0.5`) — click to set. When a train arrives, it stops with this probability. Otherwise it passes through without boarding or dropping off passengers. Default is 0.5.
+- **Stop duration** — proportional to the track distance the train has traveled since its last stop, capped at one in-game day.
+
+### Train Collision
+
+When a train tries to move into a cell occupied by another train, it waits for 2 ticks before retrying. Stations are exempt from this rule — multiple trains can occupy a station at the same time.
+
 ### Track Placement Rules
 
 - Placing a track with 1-2 adjacent track neighbors auto-connects to them.
@@ -51,6 +63,16 @@ server: {
 ### Train Movement at Junctions
 
 At a junction with 3+ connections, trains filter out reverse and sharp turns (90 degrees or more), then choose randomly from remaining valid directions.
+
+### Discord Notifications
+
+Stations can send train arrival notifications to a Discord channel via webhooks.
+
+1. Create a webhook in your Discord channel (Channel Settings > Integrations > Webhooks).
+2. In the sidebar, click **[+D]** next to a station and paste the webhook URL.
+3. When a train stops at that station, a message is sent with details: train number, origin station, stay duration, passengers on/off, and revenue.
+
+To remove a webhook, click **[D]** and submit an empty URL.
 
 ## Architecture
 
