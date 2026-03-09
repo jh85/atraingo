@@ -1,6 +1,6 @@
 # A-Train Go
 
-A 2D browser-based railway simulation game with JRPG (Dragon Warrior) visual style. Build tracks, place stations, buy trains, and manage a railway network on a procedurally generated 1000x1000 tile map.
+A 2D browser-based railway simulation game with an old visual style. Build tracks, place stations, buy trains, and manage a railway network on a 1000x1000 tile map.
 
 ## Getting Started
 
