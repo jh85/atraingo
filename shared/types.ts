@@ -83,7 +83,23 @@ export type ClientMessage =
   | { type: 'set_station_webhook'; stationKey: string; webhook: string }
   | { type: 'save_game' };
 
+// Lightweight tick update — everything except track network
+export interface TickUpdate {
+  trains: Train[];
+  stations: Station[];
+  streetLights: Pos[];
+  player: Player;
+  time: GameTime;
+}
+
+// Delta: track node added/updated (includes its current connections)
+export interface TrackDelta {
+  key: string;
+  connections: string[];
+}
+
 export type ServerMessage =
   | { type: 'game_state'; state: GameState }
-  | { type: 'update'; state: GameState }
+  | { type: 'tick'; data: TickUpdate }
+  | { type: 'track_update'; changes: TrackDelta[]; removed: string[]; branchDefaults?: [string, Direction][]; player: Player }
   | { type: 'error'; message: string };

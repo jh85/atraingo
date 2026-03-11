@@ -48,9 +48,54 @@ function connect(): void {
     const msg: ServerMessage = JSON.parse(event.data);
     switch (msg.type) {
       case 'game_state':
-      case 'update':
+        // Full state on initial connection
         state = msg.state;
         break;
+
+      case 'tick':
+        // Lightweight tick: update dynamic data, keep tracks untouched
+        if (state) {
+          state.trains = msg.data.trains;
+          state.stations = msg.data.stations;
+          state.streetLights = msg.data.streetLights;
+          state.player = msg.data.player;
+          state.time = msg.data.time;
+        }
+        break;
+
+      case 'track_update':
+        // Delta update: apply only changed track nodes
+        if (state) {
+          // Build a mutable Map from current trackConnections
+          const trackMap = new Map<string, string[]>(state.trackConnections);
+
+          // Remove deleted nodes
+          for (const key of msg.removed) {
+            trackMap.delete(key);
+          }
+
+          // Apply changed/added nodes
+          for (const delta of msg.changes) {
+            trackMap.set(delta.key, delta.connections);
+          }
+
+          // Write back as array
+          state.trackConnections = Array.from(trackMap.entries());
+
+          // Apply branch defaults if provided
+          if (msg.branchDefaults) {
+            const bdMap = new Map<string, string>(state.branchDefaults as [string, string][]);
+            for (const [key, dir] of msg.branchDefaults) {
+              bdMap.set(key, dir);
+            }
+            state.branchDefaults = Array.from(bdMap.entries()) as typeof state.branchDefaults;
+          }
+
+          // Update player money
+          state.player = msg.player;
+        }
+        break;
+
       case 'error':
         ui.showError(msg.message);
         break;

@@ -1,4 +1,4 @@
-import type { Train, Station, Player, Direction, GameState, GameTime, ClientMessage, Pos } from '../shared/types.js';
+import type { Train, Station, Player, Direction, GameState, GameTime, ClientMessage, Pos, TrackDelta, TickUpdate } from '../shared/types.js';
 import {
   GRID_WIDTH, GRID_HEIGHT, STARTING_MONEY, STATION_COST, TRAIN_COST, STREETLIGHT_COST,
   TICK_INTERVAL, PASSENGER_GEN_TICKS, STATION_STOP_TICKS, MAP_SEED,
@@ -25,7 +25,8 @@ export class GameWorld {
   private tickCount = 0;
   private nextTrainId = 1;
   private stationCount = 0;
-  private onUpdate: (() => void) | null = null;
+  private onTick: ((data: TickUpdate) => void) | null = null;
+  private onTrackUpdate: ((changes: TrackDelta[], removed: string[], branchDefaults: [string, Direction][] | undefined, player: Player) => void) | null = null;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private time: GameTime = { day: 1, hour: START_HOUR, minute: 0 };
   private lastTaxDay = 0;
@@ -40,8 +41,12 @@ export class GameWorld {
     };
   }
 
-  setUpdateCallback(cb: () => void): void {
-    this.onUpdate = cb;
+  setTickCallback(cb: (data: TickUpdate) => void): void {
+    this.onTick = cb;
+  }
+
+  setTrackUpdateCallback(cb: (changes: TrackDelta[], removed: string[], branchDefaults: [string, Direction][] | undefined, player: Player) => void): void {
+    this.onTrackUpdate = cb;
   }
 
   setTaxCallback(cb: (amount: number) => void): void {
@@ -95,12 +100,31 @@ export class GameWorld {
     }
   }
 
+  private emitTick(): void {
+    this.onTick?.({
+      trains: this.trains,
+      stations: this.stations,
+      streetLights: this.streetLights,
+      player: this.player,
+      time: { ...this.time },
+    });
+  }
+
+  private emitTrackDelta(changes: TrackDelta[], removed: string[] = [], branchDefaults?: [string, Direction][]): void {
+    this.onTrackUpdate?.(changes, removed, branchDefaults, this.player);
+  }
+
+  /** Build a TrackDelta for a single node key */
+  private trackDeltaFor(key: string): TrackDelta {
+    return { key, connections: Array.from(this.tracks.getConnections(key)) };
+  }
+
   private tick(): void {
     this.tickCount++;
     this.advanceTime();
 
     if (this.trains.length === 0) {
-      this.onUpdate?.();
+      this.emitTick();
       return;
     }
 
@@ -156,7 +180,7 @@ export class GameWorld {
       this.passengerSys.generatePassengers(this.stations);
     }
 
-    this.onUpdate?.();
+    this.emitTick();
   }
 
   handleAction(msg: ClientMessage): { success: boolean; error?: string } {
@@ -231,7 +255,14 @@ export class GameWorld {
       }
     }
 
-    this.onUpdate?.();
+    // Send delta: new node + any neighbors whose connections changed
+    const changes: TrackDelta[] = [this.trackDeltaFor(pk)];
+    for (const neighbor of adjacentTracks) {
+      if (adjacentTracks.length <= 2) {
+        changes.push(this.trackDeltaFor(posKey(neighbor)));
+      }
+    }
+    this.emitTrackDelta(changes);
     return { success: true };
   }
 
@@ -247,14 +278,14 @@ export class GameWorld {
     this.stations.splice(stationIdx, 1);
     this.player.money += STATION_COST;
 
-    this.onUpdate?.();
+    this.emitTick();
     return { success: true };
   }
 
   private removeTrain(trainIdx: number): { success: boolean; error?: string } {
     this.trains.splice(trainIdx, 1);
     this.player.money += TRAIN_COST;
-    this.onUpdate?.();
+    this.emitTick();
     return { success: true };
   }
 
@@ -265,11 +296,16 @@ export class GameWorld {
       return { success: false, error: 'Train is on this track' };
     }
 
+    // Gather neighbors before removal so we can send their updated connections
+    const neighborKeys = Array.from(this.tracks.getConnections(pk));
+
     // Remove node and all its edges — refund based on terrain
     this.tracks.removeNode(pk);
     this.player.money += trackCostAt(position.x, position.y);
 
-    this.onUpdate?.();
+    // Send delta: removed node + updated neighbors
+    const changes: TrackDelta[] = neighborKeys.map(nk => this.trackDeltaFor(nk));
+    this.emitTrackDelta(changes, [pk]);
     return { success: true };
   }
 
@@ -294,7 +330,7 @@ export class GameWorld {
       // Already connected: disconnect instead
       this.tracks.getConnections(fk).delete(tk);
       this.tracks.getConnections(tk).delete(fk);
-      this.onUpdate?.();
+      this.emitTrackDelta([this.trackDeltaFor(fk), this.trackDeltaFor(tk)]);
       return { success: true };
     }
 
@@ -320,7 +356,7 @@ export class GameWorld {
     }
 
     this.tracks.addTrack(from, to);
-    this.onUpdate?.();
+    this.emitTrackDelta([this.trackDeltaFor(fk), this.trackDeltaFor(tk)]);
     return { success: true };
   }
 
@@ -336,7 +372,7 @@ export class GameWorld {
     if (idx >= 0) {
       this.streetLights.splice(idx, 1);
       this.player.money += STREETLIGHT_COST;
-      this.onUpdate?.();
+      this.emitTick();
       return { success: true };
     }
 
@@ -357,7 +393,7 @@ export class GameWorld {
 
     this.player.money -= STREETLIGHT_COST;
     this.streetLights.push({ ...position });
-    this.onUpdate?.();
+    this.emitTick();
     return { success: true };
   }
 
@@ -392,7 +428,7 @@ export class GameWorld {
       discordWebhook: null,
     });
 
-    this.onUpdate?.();
+    this.emitTick();
     return { success: true };
   }
 
@@ -439,7 +475,7 @@ export class GameWorld {
     };
     this.trains.push(train);
 
-    this.onUpdate?.();
+    this.emitTick();
     return { success: true };
   }
 
@@ -447,7 +483,7 @@ export class GameWorld {
     const station = this.stations.find(s => posKey(s.position) === stationKey);
     if (!station) return { success: false, error: 'No station found' };
     station.discordWebhook = webhook.trim() || null;
-    this.onUpdate?.();
+    this.emitTick();
     return { success: true };
   }
 
@@ -467,7 +503,7 @@ export class GameWorld {
     const trimmed = name.trim().slice(0, 20);
     if (trimmed.length === 0) return { success: false, error: 'Name cannot be empty' };
     station.name = trimmed;
-    this.onUpdate?.();
+    this.emitTick();
     return { success: true };
   }
 
@@ -475,7 +511,7 @@ export class GameWorld {
     const station = this.stations.find(s => posKey(s.position) === stationKey);
     if (!station) return { success: false, error: 'No station found' };
     station.stopProbability = Math.max(0, Math.min(1, probability));
-    this.onUpdate?.();
+    this.emitTick();
     return { success: true };
   }
 
@@ -484,8 +520,18 @@ export class GameWorld {
       return { success: false, error: 'No track at this position' };
     }
     this.tracks.setBranchDefault(pk, direction);
-    this.onUpdate?.();
+    this.emitTrackDelta([], [], [[pk, direction]]);
     return { success: true };
+  }
+
+  getTickState(): TickUpdate {
+    return {
+      trains: this.trains,
+      stations: this.stations,
+      streetLights: this.streetLights,
+      player: this.player,
+      time: { ...this.time },
+    };
   }
 
   getState(): GameState {

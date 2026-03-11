@@ -36,8 +36,20 @@ function sendToClient(msg: ServerMessage): void {
   }
 }
 
-world.setUpdateCallback(() => {
-  sendToClient({ type: 'update', state: world.getState() });
+// Lightweight tick: only trains, stations, player, time (no track network)
+world.setTickCallback((data) => {
+  sendToClient({ type: 'tick', data });
+});
+
+// Delta updates for track/action changes: only affected nodes
+world.setTrackUpdateCallback((changes, removed, branchDefaults, player) => {
+  sendToClient({
+    type: 'track_update',
+    changes,
+    removed,
+    branchDefaults: branchDefaults,
+    player,
+  });
 });
 
 world.setTaxCallback((amount) => {
