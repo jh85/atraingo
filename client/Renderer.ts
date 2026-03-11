@@ -641,14 +641,29 @@ export class Renderer {
       if (oriented) {
         const deckLen = isDiag ? CELL_SIZE * Math.SQRT2 : CELL_SIZE;
         this.drawOrientedBridge(ctx, bx, by, angle, deckLen, depth);
+      } else if (neighbors.length === 2) {
+        // Curved bridge: deck follows a Bezier curve between the two neighbor edges
+        const np1 = parseKey(neighbors[1]);
+        const dx1 = np1.x - pos.x, dy1 = np1.y - pos.y;
+        const half = CELL_SIZE / 2;
+        // Exit points at cell edges toward each neighbor
+        const ex0 = bx + dx0 * half, ey0 = by + dy0 * half;
+        const ex1 = bx + dx1 * half, ey1 = by + dy1 * half;
+        this.drawCurvedBridge(ctx, ex0, ey0, bx, by, ex1, ey1, depth);
       } else {
-        // Junction or curve over water: circular platform
-        const r = CELL_SIZE * 0.42;
-        ctx.fillStyle = depth === 1 ? '#8D6E4C' : depth === 2 ? '#808890' : '#404850';
-        ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = depth === 1 ? '#6D5030' : depth === 2 ? '#606870' : '#384048';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.stroke();
+        // Junction (3+ neighbors): draw individual bridge segments from center to each edge
+        const half = CELL_SIZE / 2;
+        for (const nk of neighbors) {
+          const np = parseKey(nk);
+          const ndx = np.x - pos.x, ndy = np.y - pos.y;
+          const isDiagonal = Math.abs(ndx) + Math.abs(ndy) === 2;
+          const segLen = isDiagonal ? half * Math.SQRT2 : half;
+          const segAngle = Math.atan2(ndy, ndx);
+          // Draw half-bridge from center toward neighbor edge
+          const mx = bx + ndx * half * 0.5;
+          const my = by + ndy * half * 0.5;
+          this.drawOrientedBridge(ctx, mx, my, segAngle, segLen + 2, depth);
+        }
       }
     }
   }
@@ -719,6 +734,161 @@ export class Renderer {
     }
 
     ctx.restore();
+  }
+
+  /**
+   * Draw a curved bridge deck along a quadratic Bezier curve.
+   * Connects seamlessly to adjacent straight bridge segments at cell edges.
+   */
+  private drawCurvedBridge(
+    ctx: CanvasRenderingContext2D,
+    x0: number, y0: number,
+    cpx: number, cpy: number,
+    x2: number, y2: number,
+    depth: number,
+  ): void {
+    const deckW = 18;
+    const halfW = deckW / 2;
+
+    // Compute normals at start, mid, and end for offsetting
+    const railOff = halfW;
+    const t0x = cpx - x0, t0y = cpy - y0;
+    const t0len = Math.sqrt(t0x * t0x + t0y * t0y) || 1;
+    const n0x = (-t0y / t0len) * railOff, n0y = (t0x / t0len) * railOff;
+    const t2x = x2 - cpx, t2y = y2 - cpy;
+    const t2len = Math.sqrt(t2x * t2x + t2y * t2y) || 1;
+    const n2x = (-t2y / t2len) * railOff, n2y = (t2x / t2len) * railOff;
+    const tmx = x2 - x0, tmy = y2 - y0;
+    const tmlen = Math.sqrt(tmx * tmx + tmy * tmy) || 1;
+    const nmx = (-tmy / tmlen) * railOff, nmy = (tmx / tmlen) * railOff;
+
+    // Build deck shape: outer edge forward, inner edge backward
+    ctx.beginPath();
+    ctx.moveTo(x0 + n0x, y0 + n0y);
+    ctx.quadraticCurveTo(cpx + nmx, cpy + nmy, x2 + n2x, y2 + n2y);
+    ctx.lineTo(x2 - n2x, y2 - n2y);
+    ctx.quadraticCurveTo(cpx - nmx, cpy - nmy, x0 - n0x, y0 - n0y);
+    ctx.closePath();
+
+    // Fill deck
+    const deckColor = depth === 1 ? '#8D6E4C' : depth === 2 ? '#808890' : '#404850';
+    ctx.fillStyle = deckColor;
+    ctx.fill();
+
+    // Edge lines (railings)
+    const edgeColor = depth === 1 ? '#A1887F' : depth === 2 ? '#606870' : '#606870';
+    ctx.strokeStyle = edgeColor;
+    ctx.lineWidth = 1.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x0 + n0x, y0 + n0y);
+    ctx.quadraticCurveTo(cpx + nmx, cpy + nmy, x2 + n2x, y2 + n2y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x0 - n0x, y0 - n0y);
+    ctx.quadraticCurveTo(cpx - nmx, cpy - nmy, x2 - n2x, y2 - n2y);
+    ctx.stroke();
+
+    // Detail: cross planks / stone joints along the curve
+    const detailColor = depth === 1 ? '#6D5030' : depth === 2 ? '#687078' : '#505860';
+    ctx.strokeStyle = detailColor;
+    ctx.lineWidth = depth === 1 ? 0.5 : 0.5;
+    const plankCount = depth === 1 ? 7 : 5;
+    for (let i = 1; i < plankCount; i++) {
+      const t = i / plankCount;
+      const bx = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * cpx + t * t * x2;
+      const by = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * cpy + t * t * y2;
+      const btx = 2 * (1 - t) * (cpx - x0) + 2 * t * (x2 - cpx);
+      const bty = 2 * (1 - t) * (cpy - y0) + 2 * t * (y2 - cpy);
+      const btlen = Math.sqrt(btx * btx + bty * bty) || 1;
+      const bnx = (-bty / btlen) * halfW, bny = (btx / btlen) * halfW;
+      ctx.beginPath();
+      ctx.moveTo(bx + bnx, by + bny);
+      ctx.lineTo(bx - bnx, by - bny);
+      ctx.stroke();
+    }
+
+    // Depth-specific embellishments
+    if (depth === 1) {
+      // Wooden posts at both ends
+      ctx.fillStyle = '#5D4037';
+      ctx.fillRect(x0 - 2, y0 - 2, 3, 3);
+      ctx.fillRect(x2 - 2, y2 - 2, 3, 3);
+    } else if (depth === 2) {
+      // Stone crenellations along outer edge
+      ctx.fillStyle = '#606870';
+      const capOff = halfW + 1.5;
+      const cn0x = (-t0y / t0len) * capOff, cn0y = (t0x / t0len) * capOff;
+      const cn2x = (-t2y / t2len) * capOff, cn2y = (t2x / t2len) * capOff;
+      const cnmx = (-tmy / tmlen) * capOff, cnmy = (tmx / tmlen) * capOff;
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#606870';
+      ctx.beginPath();
+      ctx.moveTo(x0 + cn0x, y0 + cn0y);
+      ctx.quadraticCurveTo(cpx + cnmx, cpy + cnmy, x2 + cn2x, y2 + cn2y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x0 - cn0x, y0 - cn0y);
+      ctx.quadraticCurveTo(cpx - cnmx, cpy - cnmy, x2 - cn2x, y2 - cn2y);
+      ctx.stroke();
+      // Corner posts
+      ctx.fillStyle = '#505860';
+      ctx.fillRect(x0 - 2, y0 - 2, 4, 4);
+      ctx.fillRect(x2 - 2, y2 - 2, 4, 4);
+    } else {
+      // Iron suspension bridge: inner deck highlight + cable curves
+      ctx.fillStyle = '#505860';
+      const innerOff = halfW - 2;
+      const in0x = (-t0y / t0len) * innerOff, in0y = (t0x / t0len) * innerOff;
+      const in2x = (-t2y / t2len) * innerOff, in2y = (t2x / t2len) * innerOff;
+      const inmx = (-tmy / tmlen) * innerOff, inmy = (tmx / tmlen) * innerOff;
+      ctx.beginPath();
+      ctx.moveTo(x0 + in0x, y0 + in0y);
+      ctx.quadraticCurveTo(cpx + inmx, cpy + inmy, x2 + in2x, y2 + in2y);
+      ctx.lineTo(x2 - in2x, y2 - in2y);
+      ctx.quadraticCurveTo(cpx - inmx, cpy - inmy, x0 - in0x, y0 - in0y);
+      ctx.closePath();
+      ctx.fill();
+      // Rivets along edges
+      ctx.fillStyle = '#808890';
+      for (let i = 1; i <= 3; i++) {
+        const t = i / 4;
+        const bx = (1 - t) * (1 - t) * x0 + 2 * (1 - t) * t * cpx + t * t * x2;
+        const by = (1 - t) * (1 - t) * y0 + 2 * (1 - t) * t * cpy + t * t * y2;
+        const btx = 2 * (1 - t) * (cpx - x0) + 2 * t * (x2 - cpx);
+        const bty = 2 * (1 - t) * (cpy - y0) + 2 * t * (y2 - cpy);
+        const btlen = Math.sqrt(btx * btx + bty * bty) || 1;
+        const bnx = (-bty / btlen) * (halfW - 1), bny = (btx / btlen) * (halfW - 1);
+        ctx.fillRect(bx + bnx - 1, by + bny - 1, 2, 2);
+        ctx.fillRect(bx - bnx - 1, by - bny - 1, 2, 2);
+      }
+      // Tower posts at ends
+      ctx.fillStyle = '#384048';
+      ctx.fillRect(x0 - 2, y0 - 3, 4, 6);
+      ctx.fillRect(x2 - 2, y2 - 3, 4, 6);
+      ctx.fillStyle = '#606870';
+      ctx.fillRect(x0 - 3, y0 - 4, 6, 3);
+      ctx.fillRect(x2 - 3, y2 - 4, 6, 3);
+      // Suspension cables
+      ctx.strokeStyle = '#90989F';
+      ctx.lineWidth = 1;
+      const cableOff = halfW + 4;
+      const cb0x = (-t0y / t0len) * cableOff, cb0y = (t0x / t0len) * cableOff;
+      const cb2x = (-t2y / t2len) * cableOff, cb2y = (t2x / t2len) * cableOff;
+      const sagOff = halfW - 3;
+      const sg0x = (-t0y / t0len) * sagOff, sg0y = (t0x / t0len) * sagOff;
+      const sg2x = (-t2y / t2len) * sagOff, sg2y = (t2x / t2len) * sagOff;
+      const sgmx = (-tmy / tmlen) * sagOff, sgmy = (tmx / tmlen) * sagOff;
+      // Outer cable
+      ctx.beginPath();
+      ctx.moveTo(x0 + cb0x, y0 + cb0y);
+      ctx.quadraticCurveTo(cpx + sgmx, cpy + sgmy, x2 + cb2x, y2 + cb2y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x0 - cb0x, y0 - cb0y);
+      ctx.quadraticCurveTo(cpx - sgmx, cpy - sgmy, x2 - cb2x, y2 - cb2y);
+      ctx.stroke();
+    }
   }
 
   private drawTracks(

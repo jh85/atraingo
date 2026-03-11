@@ -20,6 +20,9 @@ export class UI {
   private errorTimeout: ReturnType<typeof setTimeout> | null = null;
   private sendAction: (msg: ClientMessage) => void;
 
+  private lastStationHtml = '';
+  private lastTrainHtml = '';
+
   constructor(sendAction: (msg: ClientMessage) => void) {
     this.sendAction = sendAction;
     this.moneyEl = document.getElementById('money')!;
@@ -60,96 +63,108 @@ export class UI {
       this.statusEl.style.color = '#666';
     }
 
-    // Station list
-    if (state.stations.length === 0) {
-      this.stationListEl.textContent = 'None yet';
-    } else {
-      this.stationListEl.innerHTML = '';
-      for (const s of state.stations) {
-        const div = document.createElement('div');
-        div.className = 'station-item';
+    // Station list — only rebuild DOM when data changes
+    const stationFingerprint = state.stations.map(s =>
+      `${posKey(s.position)}|${s.name}|${s.waitingPassengers}|${s.stopProbability}|${s.discordWebhook ? 1 : 0}`
+    ).join(';');
+    if (stationFingerprint !== this.lastStationHtml) {
+      this.lastStationHtml = stationFingerprint;
+      if (state.stations.length === 0) {
+        this.stationListEl.textContent = 'None yet';
+      } else {
+        this.stationListEl.innerHTML = '';
+        for (const s of state.stations) {
+          const div = document.createElement('div');
+          div.className = 'station-item';
 
-        const nameSpan = document.createElement('span');
-        nameSpan.textContent = s.name;
-        nameSpan.style.cursor = 'pointer';
-        nameSpan.style.textDecoration = 'underline';
-        nameSpan.style.textDecorationStyle = 'dotted';
-        nameSpan.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const newName = prompt('Rename station:', s.name);
-          if (newName !== null) {
-            this.sendAction({ type: 'rename_station', stationKey: posKey(s.position), name: newName });
-          }
-        });
-
-        const probSpan = document.createElement('span');
-        probSpan.textContent = ` p=${s.stopProbability.toFixed(1)}`;
-        probSpan.style.color = '#aaa';
-        probSpan.style.cursor = 'pointer';
-        probSpan.style.fontSize = '11px';
-        probSpan.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const val = prompt('Stop probability (0.0 - 1.0):', String(s.stopProbability));
-          if (val !== null) {
-            const p = parseFloat(val);
-            if (!isNaN(p)) {
-              this.sendAction({ type: 'set_station_probability', stationKey: posKey(s.position), probability: p });
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = s.name;
+          nameSpan.style.cursor = 'pointer';
+          nameSpan.style.textDecoration = 'underline';
+          nameSpan.style.textDecorationStyle = 'dotted';
+          nameSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const newName = prompt('Rename station:', s.name);
+            if (newName !== null) {
+              this.sendAction({ type: 'rename_station', stationKey: posKey(s.position), name: newName });
             }
-          }
-        });
+          });
 
-        const paxSpan = document.createElement('span');
-        paxSpan.textContent = ` (${s.waitingPassengers})`;
-        paxSpan.style.color = '#ffd700';
+          const probSpan = document.createElement('span');
+          probSpan.textContent = ` p=${s.stopProbability.toFixed(1)}`;
+          probSpan.style.color = '#aaa';
+          probSpan.style.cursor = 'pointer';
+          probSpan.style.fontSize = '11px';
+          probSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const val = prompt('Stop probability (0.0 - 1.0):', String(s.stopProbability));
+            if (val !== null) {
+              const p = parseFloat(val);
+              if (!isNaN(p)) {
+                this.sendAction({ type: 'set_station_probability', stationKey: posKey(s.position), probability: p });
+              }
+            }
+          });
 
-        const discordSpan = document.createElement('span');
-        discordSpan.textContent = s.discordWebhook ? ' [D]' : ' [+D]';
-        discordSpan.style.color = s.discordWebhook ? '#7289DA' : '#555';
-        discordSpan.style.cursor = 'pointer';
-        discordSpan.style.fontSize = '10px';
-        discordSpan.title = 'Set Discord webhook';
-        discordSpan.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const url = prompt('Discord webhook URL (empty to remove):', s.discordWebhook ?? '');
-          if (url !== null) {
-            this.sendAction({ type: 'set_station_webhook', stationKey: posKey(s.position), webhook: url });
-          }
-        });
+          const paxSpan = document.createElement('span');
+          paxSpan.textContent = ` (${s.waitingPassengers})`;
+          paxSpan.style.color = '#ffd700';
 
-        div.appendChild(nameSpan);
-        div.appendChild(paxSpan);
-        div.appendChild(probSpan);
-        div.appendChild(discordSpan);
-        div.addEventListener('click', () => {
-          this.sendAction({ type: 'buy_train', stationKey: posKey(s.position) });
-        });
-        this.stationListEl.appendChild(div);
+          const discordSpan = document.createElement('span');
+          discordSpan.textContent = s.discordWebhook ? ' [D]' : ' [+D]';
+          discordSpan.style.color = s.discordWebhook ? '#7289DA' : '#555';
+          discordSpan.style.cursor = 'pointer';
+          discordSpan.style.fontSize = '10px';
+          discordSpan.title = 'Set Discord webhook';
+          discordSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const url = prompt('Discord webhook URL (empty to remove):', s.discordWebhook ?? '');
+            if (url !== null) {
+              this.sendAction({ type: 'set_station_webhook', stationKey: posKey(s.position), webhook: url });
+            }
+          });
+
+          div.appendChild(nameSpan);
+          div.appendChild(paxSpan);
+          div.appendChild(probSpan);
+          div.appendChild(discordSpan);
+          div.addEventListener('click', () => {
+            this.sendAction({ type: 'buy_train', stationKey: posKey(s.position) });
+          });
+          this.stationListEl.appendChild(div);
+        }
       }
     }
 
-    // Train list
-    if (state.trains.length === 0) {
-      this.trainListEl.textContent = 'None yet';
-    } else {
-      this.trainListEl.innerHTML = '';
-      for (const t of state.trains) {
-        const div = document.createElement('div');
-        div.className = 'train-item';
-        const stateLabel = t.state === 'at_station' ? 'stopped' : t.state;
-        const tidx = Math.max(0, Math.min(8, parseInt(t.id, 10) - 1));
-        const trainBg = UI.TRAIN_COLORS[tidx];
-        const trainFg = tidx === 8 ? '#7A0C1A' : '#000';
-        let html = `<span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${trainBg};color:${trainFg};font-weight:bold;font-size:11px;text-align:center;line-height:16px;vertical-align:middle;">${t.id}</span> `
-                 + `<span style="color:#aaa">${stateLabel}</span> `
-                 + `<span style="color:#ffd700">${t.passengers}pax</span>`;
-        if (t.stationHistory && t.stationHistory.length > 0) {
-          const visits = t.stationHistory.slice().reverse().slice(0, 3);
-          html += '<div class="visit-log">'
-                + visits.map(v => `${v.name} (d${v.day})`).join(' → ')
-                + '</div>';
+    // Train list — only rebuild DOM when data changes
+    const trainFingerprint = state.trains.map(t =>
+      `${t.id}|${t.state}|${t.passengers}|${(t.stationHistory ?? []).length}`
+    ).join(';');
+    if (trainFingerprint !== this.lastTrainHtml) {
+      this.lastTrainHtml = trainFingerprint;
+      if (state.trains.length === 0) {
+        this.trainListEl.textContent = 'None yet';
+      } else {
+        this.trainListEl.innerHTML = '';
+        for (const t of state.trains) {
+          const div = document.createElement('div');
+          div.className = 'train-item';
+          const stateLabel = t.state === 'at_station' ? 'stopped' : t.state;
+          const tidx = Math.max(0, Math.min(8, parseInt(t.id, 10) - 1));
+          const trainBg = UI.TRAIN_COLORS[tidx];
+          const trainFg = tidx === 8 ? '#7A0C1A' : '#000';
+          let html = `<span style="display:inline-block;width:16px;height:16px;border-radius:50%;background:${trainBg};color:${trainFg};font-weight:bold;font-size:11px;text-align:center;line-height:16px;vertical-align:middle;">${t.id}</span> `
+                   + `<span style="color:#aaa">${stateLabel}</span> `
+                   + `<span style="color:#ffd700">${t.passengers}pax</span>`;
+          if (t.stationHistory && t.stationHistory.length > 0) {
+            const visits = t.stationHistory.slice().reverse().slice(0, 3);
+            html += '<div class="visit-log">'
+                  + visits.map(v => `${v.name} (d${v.day})`).join(' → ')
+                  + '</div>';
+          }
+          div.innerHTML = html;
+          this.trainListEl.appendChild(div);
         }
-        div.innerHTML = html;
-        this.trainListEl.appendChild(div);
       }
     }
   }
